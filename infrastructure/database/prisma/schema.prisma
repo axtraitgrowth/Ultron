@@ -1,0 +1,518 @@
+// ==============================================================================
+// ULTRON AI AGENT PLATFORM - PRISMA PRODUCTION SCHEMA
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------------------------
+// 1. User & Authentication Domains
+// ------------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  USER
+  GUEST
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  passwordHash  String         @map("password_hash")
+  name          String
+  role          UserRole       @default(USER)
+  isVerified    Boolean        @default(false) @map("is_verified")
+  avatarUrl     String?        @map("avatar_url")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  sessions      Session[]
+  devices       Device[]
+  conversations Conversation[]
+  tasks         Task[]
+  memories      Memory[]
+  memoryItems   MemoryItem[]
+  automations   Automation[]
+  files         FileRecord[]
+  integrations  Integration[]
+  notifications Notification[]
+  usageRecords  UsageRecord[]
+  auditLogs     AuditLog[]
+  permissions   Permission[]
+  agentRuns     AgentRun[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  token        String    @unique
+  refreshToken String?   @unique @map("refresh_token")
+  deviceInfo   String?   @map("device_info")
+  ipAddress    String?   @map("ip_address")
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+enum DeviceType {
+  DESKTOP_WINDOWS
+  DESKTOP_MACOS
+  MOBILE_ANDROID
+  MOBILE_IOS
+  WEB
+  TABLET
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  REVOKED
+}
+
+model Device {
+  id           String       @id @default(uuid())
+  userId       String       @map("user_id")
+  deviceType   DeviceType   @map("device_type")
+  name         String
+  hostname     String?
+  osVersion    String?      @map("os_version")
+  authToken    String       @unique @map("auth_token")
+  status       DeviceStatus @default(ONLINE)
+  capabilities Json?        @default("[]")
+  lastPingAt   DateTime     @default(now()) @map("last_ping_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("devices")
+}
+
+// ------------------------------------------------------------------------------
+// 2. Conversations & Messages Domains
+// ------------------------------------------------------------------------------
+
+model Conversation {
+  id         String     @id @default(uuid())
+  userId     String     @map("user_id")
+  title      String
+  summary    String?
+  isArchived Boolean    @default(false) @map("is_archived")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   Message[]
+  agentRuns  AgentRun[]
+  tasks      Task[]
+
+  @@index([userId])
+  @@map("conversations")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String       @map("conversation_id")
+  role           MessageRole
+  content        String       @db.Text
+  attachments    Json?        @default("[]")
+  metadata       Json?        @default("{}")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("messages")
+}
+
+// ------------------------------------------------------------------------------
+// 3. Agent Runs, Steps, & Tool Executions
+// ------------------------------------------------------------------------------
+
+enum AgentRunStatus {
+  IDLE
+  LISTENING
+  UNDERSTANDING
+  PLANNING
+  WAITING_FOR_PERMISSION
+  EXECUTING
+  OBSERVING
+  VERIFYING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model AgentRun {
+  id             String         @id @default(uuid())
+  userId         String         @map("user_id")
+  conversationId String?        @map("conversation_id")
+  status         AgentRunStatus @default(IDLE)
+  prompt         String         @db.Text
+  result         String?        @db.Text
+  error          String?        @db.Text
+  startedAt      DateTime?      @map("started_at")
+  completedAt    DateTime?      @map("completed_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  steps          AgentStep[]
+  toolCalls      ToolCall[]
+  usageRecords   UsageRecord[]
+
+  @@index([userId])
+  @@index([conversationId])
+  @@map("agent_runs")
+}
+
+enum StepStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+model AgentStep {
+  id          String     @id @default(uuid())
+  agentRunId  String     @map("agent_run_id")
+  stepNumber  Int        @map("step_number")
+  title       String
+  thought     String?    @db.Text
+  status      StepStatus @default(PENDING)
+  startedAt   DateTime?  @map("started_at")
+  completedAt DateTime?  @map("completed_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  agentRun    AgentRun   @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  toolCalls   ToolCall[]
+
+  @@index([agentRunId])
+  @@map("agent_steps")
+}
+
+enum ToolCallStatus {
+  PENDING
+  RUNNING
+  WAITING_CONFIRMATION
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+model ToolCall {
+  id          String         @id @default(uuid())
+  agentRunId  String         @map("agent_run_id")
+  agentStepId String?        @map("agent_step_id")
+  toolId      String         @map("tool_id")
+  toolName    String         @map("tool_name")
+  parameters  Json           @default("{}")
+  result      Json?
+  error       String?        @db.Text
+  status      ToolCallStatus @default(PENDING)
+  durationMs  Int            @default(0) @map("duration_ms")
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  agentRun    AgentRun       @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+  agentStep   AgentStep?     @relation(fields: [agentStepId], references: [id], onDelete: SetNull)
+
+  @@index([agentRunId])
+  @@index([agentStepId])
+  @@map("tool_calls")
+}
+
+// ------------------------------------------------------------------------------
+// 4. Tasks & Background Pipelines
+// ------------------------------------------------------------------------------
+
+enum TaskStatus {
+  PENDING
+  RUNNING
+  WAITING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Task {
+  id             String        @id @default(uuid())
+  userId         String        @map("user_id")
+  conversationId String?       @map("conversation_id")
+  title          String
+  description    String        @db.Text
+  status         TaskStatus    @default(PENDING)
+  priority       TaskPriority  @default(MEDIUM)
+  progress       Int           @default(0)
+  result         String?       @db.Text
+  error          String?       @db.Text
+  startedAt      DateTime?     @map("started_at")
+  completedAt    DateTime?     @map("completed_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  events         TaskEvent[]
+
+  @@index([userId])
+  @@map("tasks")
+}
+
+model TaskEvent {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  eventType String   @map("event_type")
+  data      Json?    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_events")
+}
+
+// ------------------------------------------------------------------------------
+// 5. Memory System (4-Tier Architecture)
+// ------------------------------------------------------------------------------
+
+enum MemoryLayer {
+  SHORT_TERM
+  SESSION
+  LONG_TERM
+  TASK
+}
+
+model Memory {
+  id        String      @id @default(uuid())
+  userId    String      @map("user_id")
+  layer     MemoryLayer
+  isEnabled Boolean     @default(true) @map("is_enabled")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     MemoryItem[]
+
+  @@unique([userId, layer])
+  @@map("memories")
+}
+
+enum MemoryCategory {
+  FACT
+  PREFERENCE
+  TASK_RESULT
+  WORKSPACE
+  SYSTEM
+}
+
+model MemoryItem {
+  id             String         @id @default(uuid())
+  memoryId       String         @map("memory_id")
+  userId         String         @map("user_id")
+  category       MemoryCategory @default(FACT)
+  key            String
+  value          String         @db.Text
+  tags           Json?          @default("[]")
+  confidence     Float          @default(1.0)
+  accessCount    Int            @default(0) @map("access_count")
+  lastAccessedAt DateTime       @default(now()) @map("last_accessed_at")
+  isActive       Boolean        @default(true) @map("is_active")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  memory         Memory         @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, key])
+  @@index([memoryId])
+  @@map("memory_items")
+}
+
+// ------------------------------------------------------------------------------
+// 6. Automations & Recurring Workflows
+// ------------------------------------------------------------------------------
+
+enum AutomationStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+}
+
+model Automation {
+  id            String           @id @default(uuid())
+  userId        String           @map("user_id")
+  name          String
+  prompt        String           @db.Text
+  cronExpression String          @map("cron_expression")
+  humanSchedule String           @map("human_schedule")
+  status        AutomationStatus @default(ACTIVE)
+  nextRunAt     DateTime         @map("next_run_at")
+  lastRunAt     DateTime?        @map("last_run_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs          AutomationRun[]
+
+  @@index([userId])
+  @@map("automations")
+}
+
+enum AutomationRunStatus {
+  SUCCESS
+  FAILED
+}
+
+model AutomationRun {
+  id           String              @id @default(uuid())
+  automationId String              @map("automation_id")
+  userId       String              @map("user_id")
+  status       AutomationRunStatus
+  output       String?             @db.Text
+  error        String?             @db.Text
+  durationMs   Int                 @default(0) @map("duration_ms")
+  executedAt   DateTime            @default(now()) @map("executed_at")
+
+  automation   Automation          @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@map("automation_runs")
+}
+
+// ------------------------------------------------------------------------------
+// 7. Files, Integrations, Notifications, Auditing & Permissions
+// ------------------------------------------------------------------------------
+
+model FileRecord {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  fileName        String   @map("file_name")
+  storageKey      String   @unique @map("storage_key")
+  mimeType        String   @map("mime_type")
+  sizeBytes       Int      @map("size_bytes")
+  storageProvider String   @default("local") @map("storage_provider")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("files")
+}
+
+model Integration {
+  id                   String   @id @default(uuid())
+  userId               String   @map("user_id")
+  provider             String
+  credentialsEncrypted String   @map("credentials_encrypted") @db.Text
+  isEnabled            Boolean  @default(true) @map("is_enabled")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@map("integrations")
+}
+
+enum NotificationLevel {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model Notification {
+  id        String            @id @default(uuid())
+  userId    String            @map("user_id")
+  title     String
+  message   String            @db.Text
+  level     NotificationLevel @default(INFO)
+  isRead    Boolean           @default(false) @map("is_read")
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+model UsageRecord {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  agentRunId       String?   @map("agent_run_id")
+  modelUsed        String    @map("model_used")
+  promptTokens     Int       @default(0) @map("prompt_tokens")
+  completionTokens Int       @default(0) @map("completion_tokens")
+  durationMs       Int       @default(0) @map("duration_ms")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentRun         AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("usage_records")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  action         String
+  targetResource String   @map("target_resource")
+  details        Json?    @default("{}")
+  ipAddress      String?  @map("ip_address")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+enum PermissionLevel {
+  READ_ONLY
+  LOW_RISK
+  USER_CONFIRMATION_REQUIRED
+  HIGH_RISK
+}
+
+model Permission {
+  id        String          @id @default(uuid())
+  userId    String          @map("user_id")
+  resource  String
+  action    String
+  level     PermissionLevel @default(READ_ONLY)
+  isGranted Boolean         @default(true) @map("is_granted")
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resource, action])
+  @@map("permissions")
+}
