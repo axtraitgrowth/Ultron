@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.env
+*.log
+data/*.db
+data/*.db-journal
+data/storage/*
+!data/storage/.gitkeep
+.DS_Store
+Thumbs.db
+coverage/
+.turbo/

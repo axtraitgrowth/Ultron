@@ -1,0 +1,47 @@
+{
+  "name": "ultron-ai-agent-platform",
+  "version": "1.0.0",
+  "description": "Production-Ready Cross-Platform Personal AI Agent Platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm.cmd --prefix packages/backend run dev",
+    "dev:backend": "npm.cmd --prefix packages/backend run dev",
+    "dev:frontend": "npm.cmd --prefix packages/frontend run dev",
+    "dev:desktop": "npm.cmd --prefix packages/desktop-agent run dev",
+    "dev:api": "npm.cmd --prefix apps/api run dev",
+    "dev:web": "npm.cmd --prefix apps/web run dev",
+    "build:shared": "npm.cmd --prefix packages/shared run build",
+    "build:agent-core": "npm.cmd --prefix packages/agent-core run build",
+    "build:packages": "npm.cmd run build:shared; npm.cmd run build:agent-core",
+    "build:backend": "npm.cmd --prefix packages/backend run build",
+    "build:frontend": "npm.cmd --prefix packages/frontend run build",
+    "build:api": "npm.cmd --prefix apps/api run build",
+    "build:web": "npm.cmd --prefix apps/web run build",
+    "build:desktop": "npm.cmd --prefix apps/desktop run build",
+    "build": "npm.cmd run build:shared; npm.cmd run build:backend; npm.cmd run build:frontend; npm.cmd run build:desktop",
+    "test:shared": "npm.cmd --prefix packages/shared test",
+    "test:agent-core": "npm.cmd --prefix packages/agent-core test",
+    "test:backend": "npm.cmd --prefix packages/backend test",
+    "test:api": "npm.cmd --prefix apps/api test",
+    "test": "npm.cmd run test:backend; npm.cmd run test:agent-core; npm.cmd run test:api",
+    "db:generate": "npx.cmd --prefix infrastructure/database prisma generate --schema=./prisma/schema.prisma",
+    "db:seed": "tsx infrastructure/database/prisma/seed.ts",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "keywords": [
+    "ai-agent",
+    "orchestrator",
+    "cross-platform",
+    "nestjs",
+    "nextjs",
+    "flutter",
+    "ultron",
+    "monorepo"
+  ],
+  "author": "Ultron Core Team",
+  "license": "MIT"
+}
